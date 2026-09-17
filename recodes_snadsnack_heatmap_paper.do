@@ -3,8 +3,10 @@
 // Created: 09/16/26
 // Data used:
 //	snad-analysis-focal-r01match-20260701.dta
-//	
-// Working directory (set to "Code")
+//	SNAD-Analysis-focal-LONG-R01match-20260120.dta
+//  
+
+* Working directory (set to "Code"):
 cd "/Users/jessicalogin/Library/CloudStorage/OneDrive-SharedLibraries-IndianaUniversity/Qu, Tianyao - 4_Cog_Bri/Fall 2026 Working Folder/Code"
 
 ****************************************************************
@@ -12,19 +14,6 @@ cd "/Users/jessicalogin/Library/CloudStorage/OneDrive-SharedLibraries-IndianaUni
 * SNAD
 ****************************************************************
 ****************************************************************
-
-/* Recode Variable Goals
-SUBID time
-ageall female white college faq 
-moca_raw execfxn epmem CRAFTDRESD language MCI_rev
-gds
-female ageall white college faq
-married parenthood working livealone grphouse anyvolunteer church_day famfriends_day smcount
-assisting_adult widowed anybrevement phassles
-friends family marriage frndsupp famsupp msupport3 communityscale pkin pclose padvice pprox mfreq ploan pchores
-bridging efctsize diverse density_rev density netsize avg_euc_age weakest occcomplex_people  diff_college diff_white numphonecontact pfriend sole diff_race sdage pcollege pwhite
-
-*/
 
 use "../Data/raw and intermediate/snad-analysis-focal-r01match-20260701.dta", clear
 
@@ -135,8 +124,6 @@ egen smcount = rowtotal(`smvars'), missing
 
 ******
 // Social stressors
- phassles
-
 codebook assisting_adult
 label define assist_lbl 0 "Not assisting" 1 "Yes assisting"
 label val assisting_adult assist_lbl
@@ -156,7 +143,6 @@ codebook phassles
 
 ******
 // Social bonding
-
 codebook friends
 codebook family
 codebook marriage
@@ -172,7 +158,7 @@ alpha family_help1 help_support1 problems_family1 make_decisions1, std item gen(
 codebook msupport3
 
 codebook integration
-clonevar integration = communityscale
+clonevar communityscale = integration 
 
 codebook pkin
 codebook pclose
@@ -231,34 +217,27 @@ replace numphonecontact = "62" if contacts_phone == "62  "
 destring numphonecontact, replace force
 tab contacts_phone numphonecontact if numphonecontact == ., m
 
+drop diff_college // drop heterogeneity measure to replace with heterophily
+codebook college pcollege
+gen diff_college = 1 - pcollege if college==1
+replace diff_college = pcollege if college==0
 
-/*
-******************************************
-**** 1. Network Variable Construction ****
-******************************************
+* Save and then add in network variables
+save "../Data/raw and intermediate/snad_heatmap_paper_intermediate.dta", replace
 
-bysort SUBID: egen pfriend=mean(relfriend)
+use "../Data/raw and intermediate/SNAD-Analysis-focal-LONG-R01match-20260120.dta", clear
 
-* 1. compute squared differences for each ego–alter dyad
-gen double agesqdiff = (alterage-snadage)^2
-* 2. by ego, take the MEAN of those squared differences (i.e. sum ÷ n)
+codebook relfriend
+bysort SUBID time: egen pfriend=mean(relfriend)
+
+codebook alterage agesnad
+replace alterage = . if alterage > 104
+gen double agesqdiff = (alterage-agesnad)^2
 bysort SUBID: egen double mean_agesq = mean(agesqdiff)
-* 3. cack to "years" by taking the square root
 gen double avg_euc_age = sqrt(mean_agesq)
 
-** education heterophily **
-fre college
-gen diff_college = 1-pcollege if college==1
-replace diff_college = pcollege if college==0
-lab var diff_college "Education heterophily" 
-
-** race heterophily **
-fre racesnack
-recode racesnack (2=1 "asian") (3=2 "black") (6=3 "white") (else=4 "other"), gen(race4) //1Asian 2Black 3White 4Other, 4 categories in alter race
-fre race4
-label define alterrace 1 "Asian" 2 "African American" 3 "White" 4 "Other"
-label values alterrace alterrace
-fre alterrace
+codebook race alterrace
+recode race (2 = 1 "Asian") (3 = 2 "African American") (5 = 3 "White") (1 4 6 = 4 "Other"), gen(race4)
 gen alterasian = alterrace==1
 replace alterasian=. if alterrace==.
 gen alterblack = alterrace==2
@@ -267,22 +246,23 @@ gen alterwhite = alterrace==3
 replace alterwhite=. if alterrace==.
 gen alterother = alterrace==4
 replace alterother=. if alterrace==.
-drop pwhite
+drop pwhite pblack pasian pother
 bysort SUBID: egen pwhite=mean(alterwhite)
 bysort SUBID: egen pblack=mean(alterblack)
 bysort SUBID: egen pasian=mean(alterasian)
 bysort SUBID: egen pother=mean(alterother)
 
-gen diff_race = 1-pwhite if race4==3
-replace diff_race = 1-pblack if race4==2
-replace diff_race = 1-pasian if race4==1
-replace diff_race = 1-pother if race4==4
+gen diff_race = 1 - pwhite if race4 == 3
+replace diff_race = 1 - pblack if race4 == 2
+replace diff_race = 1 - pasian if race4 == 1
+replace diff_race = 1 - pother if race4 == 4
 
-gen diff_white = 1-pwhite if race4==3
-replace diff_white = pwhite if race4==1|race4==2|race4==4
-lab var diff_white "Race heterophily (White vs. nonWhite)"
+gen diff_white = 1 - pwhite if race4 == 3
+replace diff_white = pwhite if race4 == 1 | race4 == 2 | race4 == 4
 
-*/
+* Merge back with cleaned ego data
+keep SUBID time pfriend avg_euc_age diff_race diff_white
+merge m:1 SUBID time using "../Data/raw and intermediate/snad_heatmap_paper_intermediate.dta"
 
 ******
 // Labels
@@ -337,7 +317,7 @@ label var netsize "Number of alters in network"
 label var weakest "Strength of weakest network tie (reversed)"
 label var occcomplex_people "Occupational complexity with people (reversed)"
 label var diff_college "Education heterophily" 
-label var diff_white "Race heterophily (White vs. nonWhite)"
+label var diff_white "Race heterophily (by white/nonwhite)"
 label var diff_race "Race heterophily"
 label var sole "Sole bridger in network"
 label var sdage "Standard deviation of alters' ages"
@@ -346,3 +326,28 @@ label var pwhite "Proportion of alters who are White"
 label var numphonecontact "Number of contacts in phone"
 label var avg_euc_age "Average Euclidean age distance from ego"
 label var pfriend "Proportion of alters who are friends"
+
+****
+* Save cleaned SNAD data
+save "../Data/snad_heatmap_paper_clean.dta", replace
+
+****************************************************************
+****************************************************************
+* SNACK
+****************************************************************
+****************************************************************
+
+/* Recode Variable Goals
+SUBID time
+ageall female white college faq 
+moca_raw execfxn epmem CRAFTDRESD language MCI_rev
+gds
+female ageall white college faq
+married parenthood working livealone grphouse anyvolunteer church_day famfriends_day smcount
+assisting_adult widowed anybrevement phassles
+friends family marriage frndsupp famsupp msupport3 communityscale pkin pclose padvice pprox mfreq ploan pchores
+bridging efctsize diverse density_rev density netsize avg_euc_age weakest occcomplex_people  diff_college diff_white numphonecontact pfriend sole diff_race sdage pcollege pwhite
+
+*/
+
+
