@@ -337,6 +337,9 @@ save "../Data/snad_heatmap_paper_clean.dta", replace
 ****************************************************************
 ****************************************************************
 
+import excel "../Data/raw and intermediate/SNACK_W1_W2_W3.xlsx", firstrow sheet() clear
+
+
 /* Recode Variable Goals
 SUBID time
 ageall female white college faq 
@@ -349,5 +352,4 @@ friends family marriage frndsupp famsupp msupport3 communityscale pkin pclose pa
 bridging efctsize diverse density_rev density netsize avg_euc_age weakest occcomplex_people  diff_college diff_white numphonecontact pfriend sole diff_race sdage pcollege pwhite
 
 */
-
 
