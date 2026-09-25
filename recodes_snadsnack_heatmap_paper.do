@@ -25,6 +25,7 @@ codebook time
 ******
 // Covariates
 codebook agesnad
+clonevar age = agesnad
 
 codebook female
 label define sex_lbl 0 "Male" 1 "Female"
@@ -267,7 +268,7 @@ merge m:1 SUBID time using "../Data/raw and intermediate/snad_heatmap_paper_inte
 ******
 // Labels
 label var time "Wave"
-label var agesnad "Age"
+label var age "Age"
 label var female "Sex (ref=Male)"
 label var white "Race (ref=Not white)"
 label var college "Education (ref=Less than BA)"
@@ -337,6 +338,7 @@ save "../Data/snad_heatmap_paper_clean.dta", replace
 ****************************************************************
 ****************************************************************
 
+<<<<<<< HEAD
 import excel "../Data/raw and intermediate/SNACK_W1_W2_W3.xlsx", firstrow sheet() clear
 
 
@@ -350,6 +352,131 @@ married parenthood working livealone grphouse anyvolunteer church_day famfriends
 assisting_adult widowed anybrevement phassles
 friends family marriage frndsupp famsupp msupport3 communityscale pkin pclose padvice pprox mfreq ploan pchores
 bridging efctsize diverse density_rev density netsize avg_euc_age weakest occcomplex_people  diff_college diff_white numphonecontact pfriend sole diff_race sdage pcollege pwhite
+=======
+import excel "../Data/raw and intermediate/SNACK_W1_W2_W3.xlsx", firstrow sheet("W1") clear
+>>>>>>> e45785dc9091f18d47ca35c72ab4bf019edd5a60
 
-*/
+******
+// Data info vars
+codebook SUBID
+gen time = 1
 
+<<<<<<< HEAD
+=======
+******
+// Covariates
+codebook age
+
+codebook gender // 1 is female, 2 is male
+recode gender (1 = 1 "Female") (2 = 0 "Male"), gen(female)
+
+codebook race // 1 is aian, 2 is asian, 3 is pac island, 4 is black, 5 is white, 6 is multi, 7 is unknown
+recode race (5 = 1 "White") (1 2 3 4 6 = 0 "Not White"), gen(white)
+
+codebook edu
+gen college = .
+replace college = 0 if edu == "1" | edu == "2" | edu == "3"
+replace college = 1 if edu == "4" | edu == "5"
+label define college_lbl 0 "Less than BA" 1 "BA or more"
+label val college college_lbl
+tab edu college, m
+
+local faq_vars func_appts func_checks func_coffee func_events func_hobby func_meal func_shopping func_tax func_travel func_tv
+codebook `faq_vars' // 0 normal, 1 some difficulty, 2 needs assist, 3 dependent, 0 NA
+foreach var in `faq_vars' {
+	destring `var', replace
+}
+**# Bookmark #1 - double check that this is the right way to make faq:
+alpha `faq_vars', gen(faq) asis
+
+******
+// Cognitive dependent variables
+codebook moca_raw
+
+codebook CRAFTDRE
+rename CRAFTDRE craftdre
+
+codebook animals veg MINTTOTS
+egen animalsSD = std(animals)
+egen vegSD = std(veg)
+egen minttotsSD = std(MINTTOTS)
+egen language=rowmean(animalsSD vegSD minttotsSD)
+
+codebook trail_a_time trail_b_time 
+gen negTraila= -trail_a_time 
+gen negTrailb= -trail_b_time 
+regress negTrailb negTraila
+predict Trailb_resid, residuals
+egen execfxn = std(Trailb_resid)
+
+codebook craftdre delayed_rey_sum UDSBENTD
+destring delayed_rey_sum, replace
+egen craftdreSD = std(craftdre)
+egen reydelaySD = std(delayed_rey_sum)
+egen udsbentdSD = std(UDSBENTD)
+egen epmem=rowmean(craftdreSD reydelaySD udsbentdSD)
+
+gen MCI_rev = .
+replace MCI_rev = 0 if moca_raw >= 25
+replace MCI_rev = 1 if moca_raw < 25
+label define MCI_lbl 0 "MCI/dementia" 1 "No MCI/dementia"
+label val MCI_rev MCI_lbl
+
+******
+// Mental health dependent variables
+
+local gdsvars GDS_1 GDS_2 GDS_3 GDS_4 GDS_5 GDS_6 GDS_7 GDS_8 GDS_9 GDS_10 GDS_11 GDS_12 GDS_13 GDS_14 GDS_15 GDS_16 GDS_17 GDS_18 GDS_19 GDS_20 GDS_21 GDS_22 GDS_23 GDS_24 GDS_25 GDS_26 GDS_27 GDS_28 GDS_29 GDS_30
+codebook `gdsvars'
+foreach var in `gdsvars' {
+	destring `var', replace
+}
+* note: 1 = Yes, 2 = No
+recode GDS_1 (1 = 0) (2 = 1) // satisfied?
+recode GDS_2 (2 = 0) (1 = 1) // dropped activities?
+recode GDS_3 (2 = 0) (1 = 1) // empty?
+recode GDS_4 (2 = 0) (1 = 1) // bored?
+recode GDS_5 (1 = 0) (2 = 1) // hopeful?
+recode GDS_6 (2 = 0) (1 = 1) // bothered?
+recode GDS_7 (1 = 0) (2 = 1) // good spirits?
+recode GDS_8 (2 = 0) (1 = 1) // afraid?
+recode GDS_9 (1 = 0) (2 = 1) // happy?
+recode GDS_10 (2 = 0) (1 = 1) // hopeless?
+recode GDS_11 (2 = 0) (1 = 1) // restless?
+recode GDS_12 (2 = 0) (1 = 1) // stay at home?
+recode GDS_13 (2 = 0) (1 = 1) // worry?
+recode GDS_14 (2 = 0) (1 = 1) // memory problems?
+recode GDS_15 (1 = 0) (2 = 1) // wonderful?
+recode GDS_16 (2 = 0) (1 = 1) // downhearted?
+recode GDS_17 (2 = 0) (1 = 1) // worthless?
+recode GDS_18 (2 = 0) (1 = 1) // worry?
+recode GDS_19 (1 = 0) (2 = 1) // exciting?
+recode GDS_20 (2 = 0) (1 = 1) // hard?
+recode GDS_21 (1 = 0) (2 = 1) // energy?
+recode GDS_22 (2 = 0) (1 = 1) // hopeless?
+recode GDS_23 (2 = 0) (1 = 1) // worse off?
+recode GDS_24 (2 = 0) (1 = 1) // upset?
+recode GDS_25 (2 = 0) (1 = 1) // cry?
+recode GDS_26 (2 = 0) (1 = 1) // trouble concentrate?
+recode GDS_27 (1 = 0) (2 = 1) // enjoy?
+recode GDS_28 (2 = 0) (1 = 1) // avoid social?
+recode GDS_29 (1 = 0) (2 = 1) // easy?
+recode GDS_30 (1 = 0) (2 = 1) // clear mind?
+egen gds30 = rowtotal(`gdsvars')
+codebook gds30
+
+local gadvars GAD_1 GAD_2 GAD_3 GAD_4 GAD_5 GAD_6 GAD_7
+codebook `gadvars'
+foreach var in `gadvars' {
+	destring `var', replace
+}
+egen gad = rowtotal(`gadvars')
+
+codebook anxiety1 anxiety2 anxiety3 anxiety4
+alpha anxiety1 anxiety2 anxiety3 anxiety4, gen(anxiety)
+
+codebook happiness
+tab happiness, m nolab
+
+codebook whole  // how would you describe your life as a whole?
+
+>>>>>>> e45785dc9091f18d47ca35c72ab4bf019edd5a60
