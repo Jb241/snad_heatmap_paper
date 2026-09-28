@@ -3,3 +3,5 @@
 *.xlsx
 *.dta
 *.rdata
+*.DS_Store
+*.Rhistory
