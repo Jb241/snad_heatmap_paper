@@ -72,15 +72,26 @@ label val MCI_rev MCI_lbl
 ******
 // Mental health dependent variables
 codebook gds15
+gen gds15_rev = 15 - gds15
 
 *codebook gad7_1 gad7_2 gad7_3 gad7_4 gad7_5 gad7_6 gad7_7 // lots missing
-codebook anxiety1 anxiety2 anxiety3 anxiety4
-alpha anxiety1 anxiety2 anxiety3 anxiety4, gen(anxiety)
+codebook anxiety1 anxiety2 anxiety3 anxiety4 // ranges from 0 (least anx) to 3 (most)
+replace anxiety1 = . if anxiety1 == 4
+replace anxiety2 = . if anxiety1 == 4
+replace anxiety3 = . if anxiety1 == 4
+replace anxiety4 = . if anxiety1 == 4
+replace anxiety1 = anxiety1 + 1
+replace anxiety2 = anxiety2 + 1
+replace anxiety3 = anxiety3 + 1
+replace anxiety4 = anxiety4 + 1
 
-codebook happiness
+alpha anxiety1 anxiety2 anxiety3 anxiety4, gen(anxiety)
+gen anxiety_rev = 4 - anxiety
+
+codebook happiness // least 1 to most 10 happy
 tab happiness, m nolab
 
-codebook whole  // how would you describe your life as a whole?
+codebook whole  // how would you describe your life as a whole? 1 (poor) to 4 (excellent)
 
 ******
 // Social participation
@@ -103,6 +114,7 @@ replace livealone = 1 if living_number == 0
 replace livealone = 0 if living_number > 0
 label define live_lbl 0 "Live with people" 1 "Live alone"
 label val livealone live_lbl
+gen livealone_rev = 1 - livealone
 
 codebook group_housing1
 clonevar grphouse = group_housing1
@@ -171,8 +183,12 @@ alpha family_help1 help_support1 problems_family1 make_decisions1, std item gen(
 
 codebook msupport3
 
-codebook integration
-clonevar communityscale = integration 
+
+gen integration1_rev = 7 - integration1 // i don't belong (agree 1 - disagree 7)
+codebook integration2 // i feel close to others (agree 1 - disagree 7)
+codebook integration3 // source of comfort (agree 1 - disagree 7)
+alpha integration1_rev integration2 integration3, gen(communityscale)
+gen communityscale_rev = -communityscale
 
 codebook pkin
 codebook pclose
@@ -347,6 +363,9 @@ label var avg_euc_age "Average Euclidean age distance from ego"
 label var pfriend "Proportion of alters who are friends"
 label var famfriends_day "Days in a year visiting family/friends"
 label var widowed "Spouse died in past year"
+label var gds15_rev "GDS-15 reversed"
+label var anxiety_rev "Anxiety scale reversed"
+label var communityscale_rev "Community scale - reversed"
 
 ****
 * Save cleaned SNAD data
@@ -356,7 +375,8 @@ keep SUBID time age female white college faq moca_raw craftdre language execfxn 
     illspouse phassles friends family marriage frndsupp famsupp msupport3 communityscale pkin ///
 	pclose padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
     netsize weakest occcomplex_people diff_college diff_white diff_race sole sdage pcollege ///
-	pwhite numphonecontact avg_euc_age pfriend famfriends_day widowed assisting_adult whole
+	pwhite numphonecontact avg_euc_age pfriend famfriends_day widowed assisting_adult whole ///
+	anxiety_rev gds15_rev communityscale_rev livealone_rev
 	
 gen source = 1
 label define source_lbl 1 "SNAD"
@@ -515,6 +535,7 @@ recode GDS_30 (1 = 0) (2 = 1) // clear mind?
 
 egen gds30 = rowtotal(`gdsvars'), missing
 egen gds15 = rowtotal(`gds15vars')
+gen gds15_rev = 15 - gds15
 
 codebook `gadvars'
 foreach var in `gadvars' {
@@ -522,9 +543,10 @@ foreach var in `gadvars' {
 }
 egen gad = rowtotal(`gadvars'), missing
 
-codebook `anxvars'
+codebook `anxvars' // ranges 1-4
 destring `anxvars', replace
 alpha `anxvars', gen(anxiety)
+gen anxiety_rev = 4 - anxiety
 
 destring happiness, replace
 recode happiness (1 = 0) (2 = 1) (3 = 2) (4 = 3) ///
@@ -572,6 +594,7 @@ replace livealone = 1 if living_number == 0
 replace livealone = 0 if living_number > 0
 label define live_lbl 0 "Live with people" 1 "Live alone", replace
 label val livealone live_lbl
+gen livealone_rev = 1 - livealone
 
 destring living_own1, replace
 gen grphouse = .
@@ -676,9 +699,8 @@ drop _merge
 
 codebook msupport3
 
-*codebook integration (does not exist in SNACK)
-*clonevar communityscale = integration 
-gen communityscale = .
+*codebook integration1 integration2 integration3 (does not exist in SNACK)
+gen communityscale_rev = .
 
 codebook pkin
 codebook pclose
@@ -897,7 +919,9 @@ label var avg_euc_age "Average Euclidean age distance from ego"
 label var pfriend "Proportion of alters who are friends"
 label var famfriends_day "Days in a year visiting family/friends"
 label var widowed "Spouse died in past year"
-
+label var gds15_rev "GDS-15 reversed"
+label var anxiety_rev "Anxiety scale reversed"
+label var communityscale_rev "Community scale - reversed"
 
 keep SUBID time age female white college faq moca_raw craftdre language execfxn ///
     trail_b_time epmem MCI_rev gds15 anxiety happiness whole married parenthood ///
@@ -906,7 +930,7 @@ keep SUBID time age female white college faq moca_raw craftdre language execfxn 
     padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
     netsize weakest diff_college diff_white diff_race sole sdage pcollege pwhite ///
     avg_euc_age pfriend famfriends_day assisting_adult communityscale numphonecontact ///
-	occcomplex_people widowed
+	occcomplex_people widowed anxiety_rev gds15_rev communityscale_rev livealone_rev
 	
 save "../Data/raw and intermediate/snack_w`w'.dta", replace
 
@@ -929,14 +953,14 @@ save "../Data/snack_heatmap_paper_clean.dta", replace
 use "../Data/snad_heatmap_paper_clean.dta", clear
 append using "../Data/snack_heatmap_paper_clean.dta"
 
-local compvars SUBID time age female white college faq moca_raw craftdre language execfxn ///
+local compvars time age faq moca_raw craftdre language execfxn ///
     trail_b_time epmem MCI_rev gds15 anxiety happiness whole married parenthood ///
     working livealone grphouse anyvolunteer church_day smcount anybrevement socialloss ///
     illspouse phassles friends family marriage frndsupp famsupp msupport3 pkin pclose ///
     padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
     netsize weakest diff_college diff_white diff_race sole sdage pcollege pwhite ///
     avg_euc_age pfriend famfriends_day assisting_adult communityscale numphonecontact ///
-	occcomplex_people widowed
+	occcomplex_people widowed anxiety_rev gds15_rev communityscale_rev livealone_rev
 
 table (var) (source) if time == 1, ///
     statistic(count `compvars') statistic(mean `compvars') statistic(sd `compvars') ///
@@ -946,16 +970,7 @@ table (var) (source) if time == 1, ///
 
 * Standardize
 
-local continvars age faq moca_raw craftdre language execfxn ///
-    trail_b_time epmem gds15 anxiety happiness ///
-    church_day smcount ///
-    phassles friends family marriage frndsupp famsupp msupport3 pkin pclose ///
-    padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
-    netsize weakest diff_college diff_white diff_race sdage pcollege pwhite ///
-    avg_euc_age pfriend famfriends_day communityscale numphonecontact ///
-	occcomplex_people whole
-
-foreach var in `continvars'  {
+foreach var in `compvars'  {
 	egen std_`var' = std(`var')
 } 
 

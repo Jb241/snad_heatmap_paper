@@ -10,6 +10,7 @@ Parent folder (any name)
 	-> Data/raw and intermediate
 -> Output
 	-> Output/Figures
+	-> Output/Coefficients
 	-> Output/Tables
 		-> Output/Tables/raw
 
