@@ -10,7 +10,7 @@
 //  NC-LONG-clean-250825.dta
 
 * Working directory (set to "Code"):
-cd "/Users/jessicalogin/Library/CloudStorage/OneDrive-SharedLibraries-IndianaUniversity/Qu, Tianyao - 4_Cog_Bri/Fall 2026 Working Folder/Code"
+cd "/Users/jessicalogin/Desktop/Fall 2026 Working Folder/Code"
 
 ****************************************************************
 ****************************************************************
@@ -356,7 +356,7 @@ keep SUBID time age female white college faq moca_raw craftdre language execfxn 
     illspouse phassles friends family marriage frndsupp famsupp msupport3 communityscale pkin ///
 	pclose padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
     netsize weakest occcomplex_people diff_college diff_white diff_race sole sdage pcollege ///
-	pwhite numphonecontact avg_euc_age pfriend famfriends_day widowed assisting_adult
+	pwhite numphonecontact avg_euc_age pfriend famfriends_day widowed assisting_adult whole
 	
 gen source = 1
 label define source_lbl 1 "SNAD"
@@ -381,7 +381,7 @@ local smvars social_media1___1 social_media1___2 social_media1___3 social_media1
 foreach w in 1 2 3 {
 
     display as result _n "======== WAVE `w' ========"
-cd "/Users/jessicalogin/Library/CloudStorage/OneDrive-SharedLibraries-IndianaUniversity/Qu, Tianyao - 4_Cog_Bri/Fall 2026 Working Folder/Code"
+cd "/Users/jessicalogin/Desktop/Fall 2026 Working Folder/Code"
 
 import excel "../Data/raw and intermediate/SNACK_W1_W2_W3.xlsx", firstrow sheet("W`w'") clear
 
@@ -953,7 +953,7 @@ local continvars age faq moca_raw craftdre language execfxn ///
     padvice pprox mfreq ploan pchores bridging efctsize diverse density_rev b1density_rev ///
     netsize weakest diff_college diff_white diff_race sdage pcollege pwhite ///
     avg_euc_age pfriend famfriends_day communityscale numphonecontact ///
-	occcomplex_people
+	occcomplex_people whole
 
 foreach var in `continvars'  {
 	egen std_`var' = std(`var')
