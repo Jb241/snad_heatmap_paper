@@ -8,6 +8,7 @@
 //  SNACK-wave1-long.dta
 //  250818_SNACK_W2_LONG-clean.dta
 //  NC-LONG-clean-250825.dta
+//  manual_fix_june10.dta
 
 * Working directory (set to "Code"):
 cd "/Users/jessicalogin/Desktop/Fall 2026 Working Folder/Code"
@@ -17,8 +18,15 @@ cd "/Users/jessicalogin/Desktop/Fall 2026 Working Folder/Code"
 * SNAD
 ****************************************************************
 ****************************************************************
+use "../Data/raw and intermediate/manual_fix_june10.dta", clear
+merge 1:1 SUBID date_snad using "../Data/raw and intermediate/snad-analysis-focal-r01match-20260701.dta"
+drop if _merge==1
 
-use "../Data/raw and intermediate/snad-analysis-focal-r01match-20260701.dta", clear
+replace rey_sum = rey_sum_fixed if _merge==3
+replace delayed_rey_sum = delayed_rey_sum_fixed if _merge==3
+replace trail_a_time = trail_a_time_fixed if _merge==3
+replace trail_b_time = trail_b_time_fixed if _merge==3
+replace moca_raw = moca_raw_fixed if _merge==3
 
 ******
 // Data info vars
