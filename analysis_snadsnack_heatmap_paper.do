@@ -42,3 +42,29 @@ run_heatmap, dvs(std_gds15_rev std_anxiety_rev std_happiness std_whole) ///
 	ivs(`varlist') ///
 	drop(std_age female white college std_faq *.source) ///
 	file("../Output/Coefficients/mh_heatmap_coefs.csv")
+
+****************************************
+** Multiple test correction
+
+****************************************
+** Pairwise correlation matrix
+
+pwcorr `varlist' std_language std_epmem std_moca_raw MCI_rev std_gds15_rev std_anxiety_rev std_happiness std_whole, sig obs
+
+matrix C = r(C)      // correlations
+matrix P = r(sig)    // p-values
+matrix N = r(Nobs)   // pairwise N
+
+local out "../Output/Coefficients/corr_matrix.xlsx"
+putexcel set "`out'", replace sheet("r")
+putexcel A1 = matrix(C), names nformat("0.00")
+putexcel set "`out'", modify sheet("p")
+putexcel A1 = matrix(P), names nformat("0.000")
+putexcel set "`out'", modify sheet("N")
+putexcel A1 = matrix(N), names
+putexcel save
+
+****************************************
+** Coefficient size comparison
+
+

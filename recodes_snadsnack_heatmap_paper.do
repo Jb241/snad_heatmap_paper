@@ -28,6 +28,8 @@ replace trail_a_time = trail_a_time_fixed if _merge==3
 replace trail_b_time = trail_b_time_fixed if _merge==3
 replace moca_raw = moca_raw_fixed if _merge==3
 
+drop _merge
+
 ******
 // Data info vars
 codebook SUBID
