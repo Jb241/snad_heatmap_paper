@@ -108,46 +108,108 @@ program define mtc_fdr, rclass
 	return scalar n_fdr = `n_fdr'
 end
 
+
 ****************************************
 ** 3. Helper function to create the plot.
 * mtc_plot
 
 program define mtc_plot
-	syntax, NAme(string) TItle(string) [THR(string) LEGEND]
-	// name = outcome; title = panel title; thr = FDR p-threshold; legend = show the group legend
-	
-	* Define text position, just to the right of the data
-	qui summarize coef
-	local xtxt = r(max) + 0.2
+	syntax, NAme(string) TItle(string) [GXMIN(string) GXMAX(string) GPMIN(string) ///
+		PFLOOR(real 1e-10) LEGEND]
+	// name = outcome; title = panel title; legend = show the group legend
+	// gxmin/gxmax/gpmin = smallest coef / largest coef / smallest p across ALL panels
+	// (gives every panel the same axes); blank = use this panel's own data
+	// pfloor = smallest p shown (smaller p-values are plotted at this value)
 
 	******
-	// FDR threshold line (or a note if nothing survives the correction)
+	// Plotting variables
+	* Floor p-values so extreme values (or p = 0) do not stretch/break the log axis
+	gen double pplot = max(pval, `pfloor')
+	* Note on the graph if any p-values were floored
+	qui count if pval < `pfloor'
+	local floornote ""
+	if r(N) > 0 {
+		local pf = strtrim(strofreal(`pfloor', "%12.0g")) // floor as text, e.g. 1e-10
+		local floornote `"note("p-values below `pf' are plotted at `pf'", size(tiny))"'
+	}
+	* Only label predictors with p < .05 (labeling all of them is unreadable)
+	gen str80 lblshow = plabel if sig_raw == 1
+	* FDR threshold = largest p that is still FDR-significant (. if none)
+	qui summarize pval if sig_fdr == 1, meanonly
+	local thr = r(max)
+
+	******
+	// Axis limits (shared across panels when gxmin/gxmax/gpmin are passed in)
+	qui summarize coef
+	local xmin = r(min)
+	local xmax = r(max)
+	if "`gxmin'" != "" local xmin = `gxmin'
+	if "`gxmax'" != "" local xmax = `gxmax'
+	qui summarize pplot
+	local pm = r(min)
+	if "`gpmin'" != "" local pm = `gpmin'
+
+	******
+	// X-axis: ticks from the limits, with extra room on the right for the line text
+	local span = `xmax' - `xmin'
+	local step = cond(`span' < 0.4, 0.05, cond(`span' < 0.8, 0.1, 0.2)) // tick spacing
+	local xlo = floor(`xmin' / `step') * `step' // first tick
+	local xhi = ceil(`xmax' / `step') * `step' // last tick
+	local xend = `xhi' + 0.50 * `span' // right edge of plot (room for text)
+	local xtxt = `xhi' + 0.10 * `span' // where the line text starts
+
+	******
+	// Y-axis: labels from 1 down to the smallest p shown
+	local kmax = max(4, ceil(-log10(`pm'))) // number of powers of 10 to cover
+	local ystep = ceil(`kmax' / 6) // skip labels if there would be too many
+	local ylab ""
+	forvalues k = 0(`ystep')`kmax' {
+		local v = 10^(-`k')
+		if `k' == 0 {
+			local t "1"
+		}
+		else if `k' <= 4 {
+			local t = "." + "0" * (`k' - 1) + "1" // .1 .01 .001 .0001
+		}
+		else {
+			local t "1e-`k'" // 1e-5, 1e-6, ...
+		}
+		local ylab `ylab' `v' "`t'"
+	}
+
+	******
+	// Line labels
+	local ptxt = 0.05 * 2.2
+	local lblopts size(vsmall) color(gs3) placement(east)
 	local thrline ""
 	* If there was 1+ significant fdr for threshold, create line/text label
 	if "`thr'" != "." & "`thr'" != "" {
 		local thrfmt : display %7.5f `thr'
-		local thrline `"yline(`thr', lcolor(gs10) lpattern(shortdash))"'
-		local thrtext `"text(`thr' `xtxt' "FDR p = `thrfmt'", size(small) color(gs3) placement(east))"'
+		local thrplot = max(`thr', `pfloor')
+		* FDR label sits just above its line (smaller p is higher on the reversed axis)
+		local thry = `thrplot' / 2.2
+		local thrline `"yline(`thrplot', lcolor(gs10) lpattern(shortdash))"'
+		local thrtext `"text(`thry' `xtxt' "FDR p = `thrfmt'", `lblopts')"'
 	}
 	* If there were 0 significant fdr tests, then note instead
 	else {
-		local thrtext `"text(0.009 `xtxt' "No FDR-significant results", size(small) color(gs3) placement(east))"'
+		local thrtext `"text(0.01 `xtxt' "No FDR-significant results", `lblopts')"'
 	}
 
 	******
 	// One layer per predictor group
 	* Set appearance by group
-	local colors  blue magenta stc3 orange // colors
-	local symbols X triangle square circle	// shapes
-	local sizes large small small small	// sizes
-	* Create list of formulated layers by group
+	local colors blue magenta stc3 orange // colors
+	local symbols X triangle square circle // shapes
+	local sizes large small small small // sizes
+	* Create list of formulated layers by group (markers transparent, labels solid)
 	forvalues g = 1/4 {
 		local c : word `g' of `colors'
 		local s : word `g' of `symbols'
 		local z : word `g' of `sizes'
-		local plots `plots' (scatter pval coef if group == `g', ///
-								mcolor(`c') msymbol(`s') msize(`z') ///
-								mlabel(plabel) mlabcolor(`c') ///
+		local plots `plots' (scatter pplot coef if group == `g', ///
+								mcolor(`c'%60) msymbol(`s') msize(`z') ///
+								mlabel(lblshow) mlabcolor(`c') ///
 								mlabsize(vsmall))
 	}
 
@@ -159,16 +221,18 @@ program define mtc_plot
 	******
 	// Create the plot
 	twoway `plots', ///
-		xtitle("Standardized coefficient", size(small)) ytitle("") ///
+		xtitle("Standardized coefficient", size(small)) ///
+		ytitle("P-value (log scale)", size(small)) ///
 		yscale(log reverse) ///
-		ylabel(1 0.1 0.01 0.001 0.0001, angle(0) nogrid notick) ///
+		ylabel(`ylab', angle(0) nogrid notick) ///
+		xscale(range(`xlo' `xend')) ///
+		xlabel(`xlo'(`step')`xhi', angle(0) nogrid notick) ///
 		yline(0.05, lcolor(gs10) lpattern(shortdash)) `thrline' ///
 		xline(0, lcolor(gs10) lpattern(shortdash)) ///
-		xlabel(, angle(0) nogrid notick) ///
-		text(0.06 `xtxt' "p = 0.05", size(small) color(gs3) placement(east)) `thrtext' ///
-		xsize(5.5) plotregion(margin(0 30 2 8)) ///
+		text(`ptxt' `xtxt' "p = 0.05", `lblopts') `thrtext' ///
+		xsize(5.5) plotregion(margin(0 2 2 8)) ///
 		graphregion(color(white) lstyle(none)) plotregion(color(white) lstyle(none)) ///
-		title("`title'", size(small)) `leg' ///
+		title("`title'", size(small)) `leg' `floornote' ///
 		name(mtc_`name', replace) scheme(s1color)
 
 	graph export "../Output/Figures/mtc_`name'.png", as(png) ///
@@ -177,13 +241,13 @@ end
 
 ****************************************
 ** 4. Performs correction pipeline for one outcome from start to finish.
-		* fit -> correct -> save -> plot
+		* fit -> correct -> save
 * mtc_run
 
 program define mtc_run
 	syntax, DV(string) COVars(string) IVs(string) TItle(string) ///
 		PARt(string) STRess(string) BONd(string) BRIdge(string) ///
-		[Q(real 0.05) LEGEND]
+		[Q(real 0.05)]
 	// part/stress/bond/bridge = lists of predictors in each group
 	preserve
 	display as result _n "=== `dv' ==="
@@ -209,41 +273,66 @@ program define mtc_run
 	label values group grp
 
 	******
-	// Identify and save this outcome's results
+	// Identify and save this outcome's results (plotted later by mtc_batch)
 	gen str32 outcome = "`dv'"
 	gen str60 outcome_title = `"`title'"'
 	order outcome outcome_title group predictor plabel coef se pval qval sig_raw sig_fdr
 	save "../Output/Coefficients/mtc_`dv'.dta", replace
 
-	******
-	// Plot
-	mtc_plot, name(`dv') title(`"`title'"') thr(`thr') `legend'
-
 	restore
 end
 
 ****************************************
-** 5. Performs correction pipeline for multiple outcome from start to finish.
-		* uses mtc_run
+** 5. Performs correction pipeline for multiple outcomes from start to finish.
+		* uses mtc_run (pass 1) and mtc_plot (pass 2)
 * mtc_batch
 
 program define mtc_batch
 	syntax, DVs(string) TItles(string) COVars(string) IVs(string) ///
-		GRPopts(string) STUb(string) MAINtitle(string) [Q(real 0.05)]
+		GRPopts(string) STUb(string) MAINtitle(string) [Q(real 0.05) PFLOOR(real 1e-10)]
 		// stub() = used in the combined file name
+		// pfloor() = smallest p shown on the plots (see mtc_plot)
 	local n : word count `dvs' // number of outcomes
-	local i = 0
-	local gnames // holds the list of plot names
 
 	******
-	// Loop over outcomes
+	// Pass 1: fit and correct every outcome
+	local i = 0
+	foreach dv of local dvs {
+		local ++i
+		local ttl : word `i' of `titles'
+		mtc_run, dv(`dv') covars(`covars') ivs(`ivs') title(`"`ttl'"') ///
+			`grpopts' q(`q')
+	}
+
+	******
+	// Shared axis limits across all outcomes in this figure
+	preserve
+	clear
+	foreach dv of local dvs {
+		append using "../Output/Coefficients/mtc_`dv'.dta"
+	}
+	qui summarize coef
+	local xmin = r(min)
+	local xmax = r(max)
+	gen double pp = max(pval, `pfloor')
+	qui summarize pp
+	local pmin = r(min)
+	restore
+
+	******
+	// Pass 2: plot every outcome with the shared limits
+	local i = 0
+	local gnames // holds the list of plot names
 	foreach dv of local dvs {
 		local ++i
 		local ttl : word `i' of `titles'
 		local leg ""
 		if `i' == `n' local leg "legend" // legend only on the last panel
-		mtc_run, dv(`dv') covars(`covars') ivs(`ivs') title(`"`ttl'"') ///
-			`grpopts' q(`q') `leg'
+		preserve
+		use "../Output/Coefficients/mtc_`dv'.dta", clear
+		mtc_plot, name(`dv') title(`"`ttl'"') gxmin(`xmin') gxmax(`xmax') ///
+			gpmin(`pmin') pfloor(`pfloor') `leg'
+		restore
 		local gnames `gnames' mtc_`dv'
 	}
 
@@ -269,8 +358,8 @@ program define mtc_collect
 	******
 	// Stack all outcomes
 	foreach dv of local dvs {
-		append using "../Output/Coefficients/mtc_`dv'.dta"	// add this outcome's rows
-		erase "../Output/Coefficients/mtc_`dv'.dta"	// remove the temporary file
+		append using "../Output/Coefficients/mtc_`dv'.dta" // add this outcome's rows
+		erase "../Output/Coefficients/mtc_`dv'.dta" // remove the temporary file
 	}
 	save "../Output/Coefficients/mtc_all_results.dta", replace
 	export delimited using "../Output/Coefficients/mtc_all_results.csv", replace
@@ -278,7 +367,7 @@ program define mtc_collect
 	******
 	// Summary table
 	gen seq = _n
-	gen pthr = pval if sig_fdr == 1	// p-values of FDR-significant results only
+	gen pthr = pval if sig_fdr == 1 // p-values of FDR-significant results only
 	* Get summaries (# tests, # p sig, # fdr sig, p threshold)
 	collapse (min) seq (first) outcome_title (count) n_tests = pval ///
 		(sum) n_p05 = sig_raw n_fdr = sig_fdr (max) p_threshold = pthr, by(outcome)

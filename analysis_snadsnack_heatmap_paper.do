@@ -82,9 +82,9 @@ mtc_collect, dvs(`cog_dvs' `mh_dvs')
 
 pwcorr `varlist' std_language std_epmem std_moca_raw MCI_rev std_gds15_rev std_anxiety_rev std_happiness std_whole, sig obs
 
-matrix C = r(C)      // correlations
-matrix P = r(sig)    // p-values
-matrix N = r(Nobs)   // pairwise N
+matrix C = r(C) // correlations
+matrix P = r(sig) // p-values
+matrix N = r(Nobs) // pairwise N
 
 local out "../Output/Coefficients/corr_matrix.xlsx"
 putexcel set "`out'", replace sheet("r")
@@ -98,4 +98,100 @@ putexcel save
 ****************************************
 ** Coefficient size comparison
 
+* Helper: refits one meglm per predictor and returns the sign-aligned coefficients
+capture program drop cs_coefs
+program define cs_coefs, eclass
+	syntax, DV(string) COVars(string) IVs(string) SIgns(string)
+	// signs = direction of each predictor in the OG sample
 
+	* Person id for resampled clusters (duplicates need new ids)
+	local cid _bsid
+	capture confirm variable _bsid
+	if _rc {
+		tempvar cid
+		qui egen `cid' = group(SUBID)
+	}
+
+	* One model per predictor; store sign * coef in a row vector
+	local k : word count `ivs'
+	tempname b
+	matrix `b' = J(1, `k', .)
+	local i = 0
+	foreach x of local ivs {
+		local ++i
+		local s : word `i' of `signs'
+		qui meglm `dv' `covars' `x' || `cid':
+		matrix `b'[1, `i'] = `s' * _b[`x']
+	}
+	matrix colnames `b' = `ivs'
+	ereturn post `b', obs(`=_N')
+end
+
+* Covariates
+local cog_covars "c.std_age female white college std_faq std_gds15 i.source"
+local mh_covars "c.std_age female white college std_faq i.source"
+
+* Bootstrap settings (try reps(20) first to check timing)
+local reps 20
+local seed 4553
+
+* Set up results file with one row per comparison
+tempname hold
+tempfile res
+postfile `hold' str32 outcome str40 top str40 predictor double diff se p lb ub using `res', replace
+
+foreach dv in `cog_dvs' `mh_dvs' {
+	display as result _n "=== `dv' ==="
+
+	* Pick the covariates for this outcome
+	local covars `cog_covars'
+	if strpos(" `mh_dvs' ", " `dv' ") > 0 local covars `mh_covars'
+
+	******
+	// Get the FDR-significant predictors (strongest first) and their directions
+	preserve
+	use "../Output/Coefficients/mtc_all_results.dta", clear
+	keep if outcome == "`dv'" & sig_fdr == 1
+	gen abscoef = abs(coef)
+	gsort -abscoef
+	local sigivs ""
+	local signs ""
+	forvalues i = 1/`=_N' {
+		local sigivs `sigivs' `=predictor[`i']'
+		local signs `signs' `=sign(coef[`i'])'
+	}
+	restore
+
+	* Need at least 2 significant predictors to compare
+	local k : word count `sigivs'
+	if `k' < 2 {
+		display as text "fewer than 2 FDR-significant predictors"
+		continue
+	}
+	local top : word 1 of `sigivs'
+
+	******
+	// Bootstrap the sign-aligned coefficients (gives their joint covariance)
+	capture drop _bsid
+	bootstrap _b, reps(`reps') seed(`seed') cluster(SUBID) idcluster(_bsid) nodots: ///
+		cs_coefs, dv(`dv') covars(`covars') ivs(`sigivs') signs(`signs')
+
+	******
+	// Test strongest predictor vs. each of the others
+	foreach x of local sigivs {
+		if "`x'" == "`top'" continue
+		qui lincom `top' - `x'
+		post `hold' ("`dv'") ("`top'") ("`x'") (r(estimate)) (r(se)) (r(p)) (r(lb)) (r(ub))
+	}
+}
+postclose `hold'
+
+******
+// Show and export results
+preserve
+use `res', clear
+format diff se lb ub %9.3f
+format p %9.4f
+list outcome top predictor diff p, sepby(outcome) noobs abbreviate(20)
+export delimited using "../Output/Coefficients/coef_size_comparison.csv", replace
+restore
