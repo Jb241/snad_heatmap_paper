@@ -1,6 +1,6 @@
 
 // Programs for multiple test correction (Benjamini-Hochberg FDR)
-// Created: 11/03/26
+// Created: by JB 11/03/26
 // Used by:
 //	analysis_snadsnack_heatmap_paper.do
 
@@ -17,8 +17,8 @@ capture program drop mtc_collect
 * mtc_fit
 
 program define mtc_fit
-	syntax, DV(string) COVars(string) IVs(string) [LABMax(integer 40)]
-	// dv = outcome; covars = covariates; ivs = predictors; labmax = max label length
+	syntax, DV(string) COVars(string) IVs(string)
+	// dv = outcome; covars = covariates; ivs = predictors
 
 	******
 	// Set up the results file
@@ -53,11 +53,8 @@ program define mtc_fit
 		}
 
 		******
-		// Store the predictor's label for plotting
-		local lab ""
-		capture local lab : variable label `x'
-		if `"`lab'"' == "" local lab "`x'"	// if no label, use the variable name
-		}
+		// Plot label is predictor name without the std_ prefix
+		local lab = subinstr("`x'", "std_", "", 1)
 		
 		******
 		* Write this predictor's row (incl p-value from a two-sided z-test)
@@ -186,14 +183,14 @@ end
 program define mtc_run
 	syntax, DV(string) COVars(string) IVs(string) TItle(string) ///
 		PARt(string) STRess(string) BONd(string) BRIdge(string) ///
-		[Q(real 0.05) LABMax(integer 40) LEGEND]
+		[Q(real 0.05) LEGEND]
 	// part/stress/bond/bridge = lists of predictors in each group
 	preserve
 	display as result _n "=== `dv' ==="
 
 	******
 	// Use helpers 1/2 to create models and apply correction
-	mtc_fit, dv(`dv') covars(`covars') ivs(`ivs') labmax(`labmax')
+	mtc_fit, dv(`dv') covars(`covars') ivs(`ivs')
 	mtc_fdr, q(`q')
 	local thr = r(thr)
 	display as result "`dv': m = " r(m) "; p<.05 = " r(n_raw) "; BH-FDR (q=`q') = " r(n_fdr) "; p threshold = `thr'"
@@ -205,7 +202,7 @@ program define mtc_run
 	foreach g in part stress bond bridge {
 		local ++i
 		foreach v of local `g' {
-			replace group = `i' if predictor == "`v'"
+			qui replace group = `i' if predictor == "`v'"
 		}
 	}
 	label define grp 1 "Participation" 2 "Stressors" 3 "Bonding" 4 "Bridging", replace
@@ -230,9 +227,8 @@ end
 		* uses mtc_run
 * mtc_batch
 
-
 program define mtc_batch
-	syntax, DVs(string) TItles(string asis) COVars(string) IVs(string) ///
+	syntax, DVs(string) TItles(string) COVars(string) IVs(string) ///
 		GRPopts(string) STUb(string) MAINtitle(string) [Q(real 0.05)]
 		// stub() = used in the combined file name
 	local n : word count `dvs' // number of outcomes

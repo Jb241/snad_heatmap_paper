@@ -1,6 +1,6 @@
 
 // Analysis for SNAD/SNACK heatmap paper
-// Created: 09/16/26
+// Created: by JB 09/16/26
 // Data used:
 //	combined_heatmap_paper.dta
 //	from recodes_snadsnack_heatmap_paper.do
