@@ -87,9 +87,9 @@ gen gds15_rev = 15 - gds15
 *codebook gad7_1 gad7_2 gad7_3 gad7_4 gad7_5 gad7_6 gad7_7 // lots missing
 codebook anxiety1 anxiety2 anxiety3 anxiety4 // ranges from 0 (least anx) to 3 (most)
 replace anxiety1 = . if anxiety1 == 4
-replace anxiety2 = . if anxiety1 == 4
-replace anxiety3 = . if anxiety1 == 4
-replace anxiety4 = . if anxiety1 == 4
+replace anxiety2 = . if anxiety2 == 4
+replace anxiety3 = . if anxiety3 == 4
+replace anxiety4 = . if anxiety4 == 4
 replace anxiety1 = anxiety1 + 1
 replace anxiety2 = anxiety2 + 1
 replace anxiety3 = anxiety3 + 1

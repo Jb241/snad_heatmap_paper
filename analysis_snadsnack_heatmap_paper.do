@@ -21,7 +21,7 @@ sum married parenthood working livealone_rev grphouse anyvolunteer ///
 	std_sole std_diff_race std_sdage std_pcollege std_pwhite 
 	
 ****************************************
-** All Models (feeding heatmap)
+// All Models (feeding heatmap)
 
 * Load function to output coefs
 run "output_coefficients_program.do" 
@@ -44,7 +44,7 @@ run_heatmap, dvs(std_gds15_rev std_anxiety_rev std_happiness std_whole) ///
 	file("../Output/Coefficients/mh_heatmap_coefs.csv")
 
 ****************************************
-** Multiple test correction
+// Multiple test correction
 
 * Load functions for correction
 run "multiple_test_correction_program.do"
@@ -78,8 +78,9 @@ mtc_batch, dvs(`mh_dvs') titles(`"`mh_titles'"') ///
 mtc_collect, dvs(`cog_dvs' `mh_dvs')
 
 ****************************************
-** Pairwise correlation matrix
+// Pairwise correlation matrix
 
+* All variables
 pwcorr `varlist' std_language std_epmem std_moca_raw MCI_rev std_gds15_rev std_anxiety_rev std_happiness std_whole, sig obs
 
 matrix C = r(C) // correlations
@@ -95,10 +96,27 @@ putexcel set "`out'", modify sheet("N")
 putexcel A1 = matrix(N), names
 putexcel save
 
-****************************************
-** Coefficient size comparison
+* Bonding/bridging
+local bb_vars `g_bond' `g_bridge'
+pwcorr `bb_vars', sig obs
 
-* Helper: refits one meglm per predictor and returns the sign-aligned coefficients
+matrix Cbb = r(C)
+matrix Pbb = r(sig)
+matrix Nbb = r(Nobs)
+
+local out "../Output/Coefficients/corr_matrix_bonding_bridging.xlsx"
+putexcel set "`out'", replace sheet("r")
+putexcel A1 = matrix(Cbb), names nformat("0.00")
+putexcel set "`out'", modify sheet("p")
+putexcel A1 = matrix(Pbb), names nformat("0.000")
+putexcel set "`out'", modify sheet("N")
+putexcel A1 = matrix(Nbb), names
+putexcel save
+
+****************************************
+// Coefficient size comparison
+
+* Helper function refitting models to get same-sign coefs
 capture program drop cs_coefs
 program define cs_coefs, eclass
 	syntax, DV(string) COVars(string) IVs(string) SIgns(string)
@@ -131,8 +149,8 @@ end
 local cog_covars "c.std_age female white college std_faq std_gds15 i.source"
 local mh_covars "c.std_age female white college std_faq i.source"
 
-* Bootstrap settings (try reps(20) first to check timing)
-local reps 20
+* Bootstrap settings
+local reps 200
 local seed 4553
 
 * Set up results file with one row per comparison
@@ -171,7 +189,7 @@ foreach dv in `cog_dvs' `mh_dvs' {
 	local top : word 1 of `sigivs'
 
 	******
-	// Bootstrap the sign-aligned coefficients (gives their joint covariance)
+	// Bootstrap the sign-aligned coefficients using helper
 	capture drop _bsid
 	bootstrap _b, reps(`reps') seed(`seed') cluster(SUBID) idcluster(_bsid) nodots: ///
 		cs_coefs, dv(`dv') covars(`covars') ivs(`sigivs') signs(`signs')
@@ -186,8 +204,7 @@ foreach dv in `cog_dvs' `mh_dvs' {
 }
 postclose `hold'
 
-******
-// Show and export results
+* Export
 preserve
 use `res', clear
 format diff se lb ub %9.3f
@@ -195,3 +212,101 @@ format p %9.4f
 list outcome top predictor diff p, sepby(outcome) noobs abbreviate(20)
 export delimited using "../Output/Coefficients/coef_size_comparison.csv", replace
 restore
+
+****************************************
+** Cross-outcome tests: does a predictor relate differently to cognition vs. mental health?
+
+* Domain composites (components already standardized; complete cases on components)
+capture drop cog_raw mh_raw std_cog_comp std_mh_comp
+gen cog_raw = (std_language + std_epmem + std_moca_raw) / 3
+gen mh_raw  = (std_gds15_rev + std_anxiety_rev + std_happiness + std_whole) / 4
+egen std_cog_comp = std(cog_raw)
+egen std_mh_comp  = std(mh_raw)
+drop cog_raw mh_raw
+
+local cog_covars "c.std_age female white college std_faq std_gds15 i.source"
+local mh_covars  "c.std_age female white college std_faq i.source"
+
+* Key predictors: bridging / support / relationship quality (edit freely, or use `varlist')
+local keyivs std_bridging std_efctsize std_diverse ///
+	std_msupport3 std_frndsupp std_famsupp ///
+	std_friends std_family std_marriage
+
+capture program drop cs_cross
+program define cs_cross, eclass
+	syntax, DVA(string) COVA(string) DVB(string) COVB(string) IVs(string)
+	local cid _bsid
+	capture confirm variable _bsid
+	if _rc {
+		tempvar cid
+		qui egen `cid' = group(SUBID)
+	}
+	local k : word count `ivs'
+	tempname b
+	matrix `b' = J(1, `k', .)
+	local i = 0
+	foreach x of local ivs {
+		local ++i
+		qui meglm `dva' `cova' `x' || `cid':
+		local b1 = _b[`x']
+		qui meglm `dvb' `covb' `x' || `cid':
+		matrix `b'[1, `i'] = `b1' - _b[`x']
+	}
+	matrix colnames `b' = `ivs'
+	ereturn post `b', obs(`=_N')
+end
+
+capture drop _bsid
+bootstrap _b, reps(200) seed(4553) cluster(SUBID) idcluster(_bsid) nodots: ///
+	cs_cross, dva(std_cog_comp) cova(`cog_covars') ///
+	          dvb(std_mh_comp) covb(`mh_covars') ivs(`keyivs')
+
+pture drop _bsid
+bootstrap _b, reps(`reps') seed(`seed') cluster(SUBID) idcluster(_bsid) nodots: ///
+	cs_cross, dva(std_cog_comp) cova(`cog_covars') ///
+	          dvb(std_mh_comp) covb(`mh_covars') ivs(`keyivs')
+estimates store boot_cross
+
+* Table
+estimates restore boot_cross
+tempname hold
+tempfile res
+postfile `hold' str40 predictor double diff se pval lb ub using `res', replace
+foreach x of local keyivs {
+	qui lincom `x'
+	post `hold' ("`x'") (r(estimate)) (r(se)) (r(p)) (r(lb)) (r(ub))
+}
+postclose `hold'
+preserve
+use `res', clear
+mtc_fdr, q(0.05) // BH correction across the key predictors
+format diff se lb ub %9.3f
+format pval qval %9.4f
+list predictor diff se pval qval sig_fdr, noobs abbreviate(20)
+export delimited using "../Output/Coefficients/cross_outcome_differences.csv", replace
+restore
+
+* Diff-in-diff
+estimates restore boot_cross
+local br_key std_bridging std_efctsize std_diverse
+local bd_key std_msupport3 std_frndsupp std_famsupp std_friends std_family std_marriage
+local wbr = 1 / `: word count `br_key''
+local wbd = 1 / `: word count `bd_key''
+local expr ""
+local sep ""
+foreach x of local br_key {
+	local expr `expr'`sep'`wbr'*`x'
+	local sep " + "
+}
+foreach x of local bd_key {
+	local expr `expr' - `wbd'*`x'
+}
+lincom `expr'
+
+****************************************
+// Gini coefficients
+
+run "gini_program.do"
+
+gini_table, part(`g_part') stress(`g_stress') bond(`g_bond') bridge(`g_bridge') ///
+	file("../Output/Coefficients/gini_by_variable.csv")
