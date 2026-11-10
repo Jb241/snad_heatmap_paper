@@ -15,6 +15,8 @@ program define gini_calc, rclass
 	syntax varname [if] [, SHIFT]
 	// shift = if the variable has negative values, shift so its minimum is 0
 	// (Gini needs non-negative values; flagged in r(shifted))
+	
+	* Set up
 	marksample touse
 	tempvar x r tx
 	qui gen double `x' = `varlist' if `touse'
@@ -27,35 +29,42 @@ program define gini_calc, rclass
 	local bot50 .
 	local shifted 0
 	local binary 0
-
-	if `n' >= 2 {
-		* 0/1 variables: Gini just reflects prevalence
+	
+	if `n' >= 2 { 	// if at least two observations
+		
+		* for 0/1 variables, gini just reflects prevalence
 		qui count if !inlist(`x', 0, 1) & !missing(`x')
 		local binary = (r(N) == 0)
-
+		
+		* deal with negative values
 		local ok 1
-		if `mn' < 0 {
-			if "`shift'" == "" local ok 0
+		if `mn' < 0 {  // if minimum value is negative
+			if "`shift'" == "" local ok 0	// if function not called with shift option, then 	
+											//do not shift minimum to 0 and just skip these vars
 			else {
-				qui replace `x' = `x' - `mn'
+				qui replace `x' = `x' - `mn' // if called with it, then shift
 				local shifted 1
 			}
 		}
-		if `ok' {
+		
+		* calculate gini and shares for resource hoarding idea
+		if `ok' {	// if already non-negative or shifted
 			qui summarize `x'
 			local tot = r(sum)
-			if `tot' > 0 {
+			if `tot' > 0 {		// need positive sum (otherwise divides by 0)
 				qui egen double `r' = rank(`x') if !missing(`x'), unique
 				qui gen double `tx' = (2*`r' - `n' - 1) * `x'
 				qui summarize `tx'
-				local gini = r(sum) / (`n' * `tot')      // population Gini
+				local gini = r(sum) / (`n' * `tot')  // population Gini
 				qui summarize `x' if `r' > 0.9 * `n'
-				local top10 = r(sum) / `tot'             // share held by top 10%
+				local top10 = r(sum) / `tot'   // share held by top 10%
 				qui summarize `x' if `r' <= 0.5 * `n'
-				local bot50 = r(sum) / `tot'             // share held by bottom 50%
+				local bot50 = r(sum) / `tot'  // share held by bottom 50%
 			}
 		}
 	}
+	
+	* output
 	return scalar n       = `n'
 	return scalar mean    = `mean'
 	return scalar gini    = `gini'
@@ -72,19 +81,17 @@ end
 
 program define gini_table
 	syntax, PARt(string) STRess(string) BONd(string) BRIdge(string) FILE(string) ///
-		[WAVE(integer 1)]
-	// part/stress/bond/bridge = predictor lists (std_ names) for each group
-	// wave = which wave to use so each person counts once (default 1)
-	// file = csv path for results
-
+		[WAVE(integer 1)]   // part/stress/bond/bridge = predictor lists (std_ names) for each group; wave = which wave to use so each person counts once (default 1); file = csv path for results
+	
+	* set up
 	local grps part stress bond bridge
 	local glabs Participation Stressors Bonding Bridging
-
 	tempname hold
 	tempfile res
-	postfile `hold' str8 subsample str14 grp str32 variable str80 vlabel ///
+	postfile `hold' str8 subsample str14 grp str32 variable ///
 		double n mean gini top10 bot50 shifted binary using `res', replace
 
+	* three options (pooled, snad, and snack)
 	foreach s in 1 2 3 {
 		if `s' == 1 {
 			local sname "Pooled"
@@ -99,22 +106,23 @@ program define gini_table
 			local cond "time == `wave' & source == 2"
 		}
 
+		* perform loops
 		local gi = 0
-		foreach g of local grps {
+		foreach g of local grps { 	// loop over groups
 			local ++gi
 			local glab : word `gi' of `glabs'
-			foreach x of local `g' {
+			foreach x of local `g' {	// loop over predictors in current group
 				local v = subinstr("`x'", "std_", "", 1)   // raw (unstandardized) name
-				local lab : variable label `v'
 				qui gini_calc `v' if `cond', shift
-				post `hold' ("`sname'") ("`glab'") ("`v'") (`"`lab'"') ///
+				post `hold' ("`sname'") ("`glab'") ("`v'") ///
 					(r(n)) (r(mean)) (r(gini)) (r(top10)) (r(bot50)) ///
 					(r(shifted)) (r(binary))
 			}
 		}
 	}
 	postclose `hold'
-
+	
+	* export table
 	preserve
 	use `res', clear
 	format mean gini top10 bot50 %9.3f

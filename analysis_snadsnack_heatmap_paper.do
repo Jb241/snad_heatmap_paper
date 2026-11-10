@@ -77,6 +77,18 @@ mtc_batch, dvs(`mh_dvs') titles(`"`mh_titles'"') ///
 * Stack everything into one results file + summary table
 mtc_collect, dvs(`cog_dvs' `mh_dvs')
 
+* Save local for these
+preserve
+use "../Output/Coefficients/mtc_all_results.dta", clear
+keep if sig_fdr == 1
+levelsof predictor, local(keyivs)
+if "`keyivs'" == "" {
+    display as error "No predictors passed FDR correction for the selected outcomes."
+    exit 2000
+}
+restore
+
+
 ****************************************
 // Pairwise correlation matrix
 
@@ -125,31 +137,29 @@ program define cs_coefs, eclass
 	* Person id for resampled clusters (duplicates need new ids)
 	local cid _bsid
 	capture confirm variable _bsid
-	if _rc {
+	if _rc { 	// if no existing _bsid variable
 		tempvar cid
 		qui egen `cid' = group(SUBID)
 	}
 
 	* One model per predictor; store sign * coef in a row vector
-	local k : word count `ivs'
+	local k : word count `ivs' 	// number of predictors
 	tempname b
 	matrix `b' = J(1, `k', .)
 	local i = 0
-	foreach x of local ivs {
+	foreach x of local ivs { 	// loop over predictors
 		local ++i
-		local s : word `i' of `signs'
+		local s : word `i' of `signs' 	// get OG sign for this predictor
 		qui meglm `dv' `covars' `x' || `cid':
-		matrix `b'[1, `i'] = `s' * _b[`x']
+		matrix `b'[1, `i'] = `s' * _b[`x']  // multiply coef by OG sign & store
 	}
-	matrix colnames `b' = `ivs'
+	matrix colnames `b' = `ivs'		// predictor as column name
 	ereturn post `b', obs(`=_N')
 end
 
-* Covariates
+* Set up options for program ^
 local cog_covars "c.std_age female white college std_faq std_gds15 i.source"
 local mh_covars "c.std_age female white college std_faq i.source"
-
-* Bootstrap settings
 local reps 200
 local seed 4553
 
@@ -158,25 +168,26 @@ tempname hold
 tempfile res
 postfile `hold' str32 outcome str40 top str40 predictor double diff se p lb ub using `res', replace
 
+* Loop over outcomes
 foreach dv in `cog_dvs' `mh_dvs' {
 	display as result _n "=== `dv' ==="
 
 	* Pick the covariates for this outcome
 	local covars `cog_covars'
-	if strpos(" `mh_dvs' ", " `dv' ") > 0 local covars `mh_covars'
+	if strpos(" `mh_dvs' ", " `dv' ") > 0 local covars `mh_covars' // change covars to mh if in
 
 	******
 	// Get the FDR-significant predictors (strongest first) and their directions
 	preserve
 	use "../Output/Coefficients/mtc_all_results.dta", clear
-	keep if outcome == "`dv'" & sig_fdr == 1
+	keep if outcome == "`dv'" & sig_fdr == 1	// keep fdr sig predictors for this outcome
 	gen abscoef = abs(coef)
-	gsort -abscoef
-	local sigivs ""
+	gsort -abscoef		// sort strong to weak
+	local sigivs ""		
 	local signs ""
 	forvalues i = 1/`=_N' {
-		local sigivs `sigivs' `=predictor[`i']'
-		local signs `signs' `=sign(coef[`i'])'
+		local sigivs `sigivs' `=predictor[`i']' // local for significant vars
+		local signs `signs' `=sign(coef[`i'])'	// local for sign of those
 	}
 	restore
 
@@ -197,7 +208,7 @@ foreach dv in `cog_dvs' `mh_dvs' {
 	******
 	// Test strongest predictor vs. each of the others
 	foreach x of local sigivs {
-		if "`x'" == "`top'" continue
+		if "`x'" == "`top'" continue 	// skip if this run is for strongest iv
 		qui lincom `top' - `x'
 		post `hold' ("`dv'") ("`top'") ("`x'") (r(estimate)) (r(se)) (r(p)) (r(lb)) (r(ub))
 	}
@@ -214,11 +225,11 @@ export delimited using "../Output/Coefficients/coef_size_comparison.csv", replac
 restore
 
 ****************************************
-** Cross-outcome tests: does a predictor relate differently to cognition vs. mental health?
+** Cross-outcome tests: does predictor relate differently to cognition vs. mental health?
 
-* Domain composites (components already standardized; complete cases on components)
+* Domain composites
 capture drop cog_raw mh_raw std_cog_comp std_mh_comp
-gen cog_raw = (std_language + std_epmem + std_moca_raw) / 3
+gen cog_raw = (std_language + std_epmem + std_moca_raw) / 3 // not including MCI bc logit
 gen mh_raw  = (std_gds15_rev + std_anxiety_rev + std_happiness + std_whole) / 4
 egen std_cog_comp = std(cog_raw)
 egen std_mh_comp  = std(mh_raw)
@@ -227,11 +238,7 @@ drop cog_raw mh_raw
 local cog_covars "c.std_age female white college std_faq std_gds15 i.source"
 local mh_covars  "c.std_age female white college std_faq i.source"
 
-* Key predictors: bridging / support / relationship quality (edit freely, or use `varlist')
-local keyivs std_bridging std_efctsize std_diverse ///
-	std_msupport3 std_frndsupp std_famsupp ///
-	std_friends std_family std_marriage
-
+* Similar program to above
 capture program drop cs_cross
 program define cs_cross, eclass
 	syntax, DVA(string) COVA(string) DVB(string) COVB(string) IVs(string)
@@ -250,7 +257,7 @@ program define cs_cross, eclass
 		qui meglm `dva' `cova' `x' || `cid':
 		local b1 = _b[`x']
 		qui meglm `dvb' `covb' `x' || `cid':
-		matrix `b'[1, `i'] = `b1' - _b[`x']
+		matrix `b'[1, `i'] = `b1' - _b[`x']   // subtract the two coefs
 	}
 	matrix colnames `b' = `ivs'
 	ereturn post `b', obs(`=_N')
@@ -261,10 +268,6 @@ bootstrap _b, reps(200) seed(4553) cluster(SUBID) idcluster(_bsid) nodots: ///
 	cs_cross, dva(std_cog_comp) cova(`cog_covars') ///
 	          dvb(std_mh_comp) covb(`mh_covars') ivs(`keyivs')
 
-pture drop _bsid
-bootstrap _b, reps(`reps') seed(`seed') cluster(SUBID) idcluster(_bsid) nodots: ///
-	cs_cross, dva(std_cog_comp) cova(`cog_covars') ///
-	          dvb(std_mh_comp) covb(`mh_covars') ivs(`keyivs')
 estimates store boot_cross
 
 * Table
@@ -279,29 +282,11 @@ foreach x of local keyivs {
 postclose `hold'
 preserve
 use `res', clear
-mtc_fdr, q(0.05) // BH correction across the key predictors
 format diff se lb ub %9.3f
-format pval qval %9.4f
-list predictor diff se pval qval sig_fdr, noobs abbreviate(20)
+format pval %9.4f
+list predictor diff se pval, noobs abbreviate(20)
 export delimited using "../Output/Coefficients/cross_outcome_differences.csv", replace
 restore
-
-* Diff-in-diff
-estimates restore boot_cross
-local br_key std_bridging std_efctsize std_diverse
-local bd_key std_msupport3 std_frndsupp std_famsupp std_friends std_family std_marriage
-local wbr = 1 / `: word count `br_key''
-local wbd = 1 / `: word count `bd_key''
-local expr ""
-local sep ""
-foreach x of local br_key {
-	local expr `expr'`sep'`wbr'*`x'
-	local sep " + "
-}
-foreach x of local bd_key {
-	local expr `expr' - `wbd'*`x'
-}
-lincom `expr'
 
 ****************************************
 // Gini coefficients
